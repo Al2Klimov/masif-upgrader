@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 )
@@ -22,7 +23,16 @@ var apiPkgMgrActions = map[pkgMgrAction]string{
 }
 
 func runAgent() error {
-	tasks, errWIUA := (&apt{}).whatIfUpgradeAll()
+	ourPkgMgr, errPM := newApt()
+	if errPM != nil {
+		return errPM
+	}
+
+	if ourPkgMgr == nil {
+		return errors.New("package manager not available or not supported")
+	}
+
+	tasks, errWIUA := ourPkgMgr.whatIfUpgradeAll()
 	if errWIUA != nil {
 		return errWIUA
 	}

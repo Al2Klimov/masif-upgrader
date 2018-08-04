@@ -16,7 +16,24 @@ func (self *aptBadOutput) Error() string {
 	return "Got bad output from apt-get -sqq: " + self.output
 }
 
-type apt struct{}
+type apt struct {
+	exe string
+}
+
+func newApt() (result *apt, err error) {
+	exe, errLP := exec.LookPath("apt-get")
+	if errLP != nil {
+		if errCmd, isErrCmd := errLP.(*exec.Error); isErrCmd {
+			if errCmd.Err == exec.ErrNotFound {
+				return nil, nil
+			}
+		}
+
+		return nil, errLP
+	}
+
+	return &apt{exe: exe}, nil
+}
 
 func (self *apt) whatIfUpgradeAll() (tasks map[pkgMgrTask]struct{}, err error) {
 	return self.whatIf("upgrade")
@@ -27,7 +44,7 @@ func (self *apt) whatIfUpgrade(packageName string) (tasks map[pkgMgrTask]struct{
 }
 
 func (self *apt) upgrade(packageName string) error {
-	cmd := exec.Command("apt-get", "-yqq", "upgrade", packageName)
+	cmd := exec.Command(self.exe, "-yqq", "upgrade", packageName)
 
 	cmd.Env = []string{"LC_ALL=C", "DEBIAN_FRONTEND=noninteractive", "PATH=" + os.Getenv("PATH")}
 	cmd.Dir = "/"
@@ -41,7 +58,7 @@ func (self *apt) upgrade(packageName string) error {
 var aptLineRgx = regexp.MustCompile(`\A([^ ]+) ([^ ]+)(?: \[([^]]+)])?(?: \(([^)]+)\))?\z`)
 
 func (self *apt) whatIf(args ...string) (tasks map[pkgMgrTask]struct{}, err error) {
-	cmd := exec.Command("apt-get", append([]string{"-sqq"}, args...)...)
+	cmd := exec.Command(self.exe, append([]string{"-sqq"}, args...)...)
 	outBuf := bytes.Buffer{}
 
 	cmd.Env = []string{"LC_ALL=C"}

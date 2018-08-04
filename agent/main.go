@@ -6,9 +6,13 @@ import (
 	"fmt"
 	ini "gopkg.in/ini.v1"
 	"os"
+	"time"
 )
 
 type settings struct {
+	interval struct {
+		check, report int64
+	}
 	master struct {
 		host string
 	}
@@ -44,54 +48,104 @@ func runAgent() error {
 		return errors.New("package manager not available or not supported")
 	}
 
-	tasks, errWIUA := ourPkgMgr.whatIfUpgradeAll()
-	if errWIUA != nil {
-		return errWIUA
+	var errWIUA error
+	var tasks map[pkgMgrTask]struct{} = nil
+	approvedTasks := map[pkgMgrTask]struct{}{}
+	interval := struct{ check, report time.Duration }{
+		check:  time.Duration(cfg.interval.check) * time.Second,
+		report: time.Duration(cfg.interval.report) * time.Second,
 	}
 
-	if len(tasks) > 0 {
-		approvedTasks, errRT := master.reportTasks(tasks)
-		if errRT != nil {
-			return errRT
-		}
-
-		for {
-			tasks, errWIUA := ourPkgMgr.whatIfUpgradeAll()
-			if errWIUA != nil {
+	for {
+		if tasks == nil {
+			if tasks, errWIUA = ourPkgMgr.whatIfUpgradeAll(); errWIUA != nil {
 				return errWIUA
 			}
+		}
 
-			nextPackage := ""
-			actionsNeeded := ^uint64(0)
+		if len(tasks) > 0 {
+			notApprovedTasks := map[pkgMgrTask]struct{}{}
 
-		PossibleActions:
 			for task := range tasks {
-				if _, isApproved := approvedTasks[task]; isApproved && task.action == pkgMgrUpdate {
-					tasksOnUpgrade, errWIU := ourPkgMgr.whatIfUpgrade(task.packageName)
-					if errWIU != nil {
-						return errWIU
-					}
-
-					for taskOnUpgrade := range tasksOnUpgrade {
-						if _, approved := approvedTasks[taskOnUpgrade]; !approved {
-							continue PossibleActions
-						}
-					}
-
-					if actionsNeededForUpgrade := uint64(len(tasksOnUpgrade)); actionsNeededForUpgrade < actionsNeeded {
-						actionsNeeded = actionsNeededForUpgrade
-						nextPackage = task.packageName
-					}
+				if _, isApproved := approvedTasks[task]; !isApproved {
+					notApprovedTasks[task] = struct{}{}
 				}
 			}
 
-			if nextPackage == "" {
-				break
+			if len(notApprovedTasks) > 0 {
+				tasks = nil
+
+				freshApprovedTasks, errRT := master.reportTasks(notApprovedTasks)
+				if errRT != nil {
+					return errRT
+				}
+
+				for task := range freshApprovedTasks {
+					approvedTasks[task] = struct{}{}
+				}
 			}
 
-			if errU := ourPkgMgr.upgrade(nextPackage); errU != nil {
-				return errU
+			for {
+				if tasks == nil {
+					if tasks, errWIUA = ourPkgMgr.whatIfUpgradeAll(); errWIUA != nil {
+						return errWIUA
+					}
+				}
+
+				nextPackage := ""
+				actionsNeeded := ^uint64(0)
+
+			PossibleActions:
+				for task := range tasks {
+					if _, isApproved := approvedTasks[task]; isApproved && task.action == pkgMgrUpdate {
+						tasks = nil
+
+						tasksOnUpgrade, errWIU := ourPkgMgr.whatIfUpgrade(task.packageName)
+						if errWIU != nil {
+							return errWIU
+						}
+
+						for taskOnUpgrade := range tasksOnUpgrade {
+							if _, approved := approvedTasks[taskOnUpgrade]; !approved {
+								continue PossibleActions
+							}
+						}
+
+						actionsNeededForUpgrade := uint64(len(tasksOnUpgrade))
+						if actionsNeededForUpgrade < actionsNeeded {
+							actionsNeeded = actionsNeededForUpgrade
+							nextPackage = task.packageName
+						}
+					}
+				}
+
+				if nextPackage == "" {
+					break
+				}
+
+				tasks = nil
+
+				if errU := ourPkgMgr.upgrade(nextPackage); errU != nil {
+					return errU
+				}
 			}
+
+			if tasks == nil {
+				if tasks, errWIUA = ourPkgMgr.whatIfUpgradeAll(); errWIUA != nil {
+					return errWIUA
+				}
+			}
+
+			if len(tasks) > 0 {
+				tasks = nil
+				time.Sleep(interval.report)
+			} else {
+				approvedTasks = map[pkgMgrTask]struct{}{}
+			}
+		} else {
+			approvedTasks = map[pkgMgrTask]struct{}{}
+			tasks = nil
+			time.Sleep(interval.check)
 		}
 	}
 
@@ -111,8 +165,13 @@ func loadCfg() (config *settings, err error) {
 		return nil, errLI
 	}
 
+	cfgInterval := cfg.Section("interval")
 	cfgTls := cfg.Section("tls")
 	result := &settings{
+		interval: struct{ check, report int64 }{
+			check:  cfgInterval.Key("check").MustInt64(),
+			report: cfgInterval.Key("report").MustInt64(),
+		},
 		master: struct{ host string }{
 			host: cfg.Section("master").Key("host").String(),
 		},
@@ -121,6 +180,14 @@ func loadCfg() (config *settings, err error) {
 			key:  cfgTls.Key("key").String(),
 			ca:   cfgTls.Key("ca").String(),
 		},
+	}
+
+	if result.interval.check <= 0 {
+		return nil, errors.New("config: interval.check missing")
+	}
+
+	if result.interval.report <= 0 {
+		return nil, errors.New("config: interval.report missing")
 	}
 
 	if result.master.host == "" {

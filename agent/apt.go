@@ -21,18 +21,16 @@ type apt struct {
 }
 
 func newApt() (result *apt, err error) {
-	exe, errLP := exec.LookPath("apt-get")
-	if errLP != nil {
-		if errCmd, isErrCmd := errLP.(*exec.Error); isErrCmd {
-			if errCmd.Err == exec.ErrNotFound {
-				return nil, nil
-			}
-		}
-
-		return nil, errLP
+	path, errGEP := getExePath("apt-get")
+	if errGEP != nil {
+		return nil, errGEP
 	}
 
-	return &apt{exe: exe}, nil
+	if path != "" {
+		result = &apt{exe: path}
+	}
+
+	return
 }
 
 func (self *apt) whatIfUpgradeAll() (tasks map[pkgMgrTask]struct{}, err error) {

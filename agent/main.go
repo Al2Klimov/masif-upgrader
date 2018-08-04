@@ -12,6 +12,9 @@ type settings struct {
 	master struct {
 		host string
 	}
+	tls struct {
+		cert, key, ca string
+	}
 }
 
 func main() {
@@ -25,6 +28,11 @@ func runAgent() error {
 	cfg, errLC := loadCfg()
 	if errLC != nil {
 		return errLC
+	}
+
+	master, errNA := newApi(cfg.master.host, cfg.tls)
+	if errNA != nil {
+		return errNA
 	}
 
 	ourPkgMgr, errPM := newApt()
@@ -41,7 +49,7 @@ func runAgent() error {
 		return errWIUA
 	}
 
-	approvedTasks, errRT := (&api{host: cfg.master.host}).reportTasks(tasks)
+	approvedTasks, errRT := master.reportTasks(tasks)
 	if errRT != nil {
 		return errRT
 	}
@@ -63,14 +71,32 @@ func loadCfg() (config *settings, err error) {
 		return nil, errLI
 	}
 
+	cfgTls := cfg.Section("tls")
 	result := &settings{
 		master: struct{ host string }{
 			host: cfg.Section("master").Key("host").String(),
+		},
+		tls: struct{ cert, key, ca string }{
+			cert: cfgTls.Key("cert").String(),
+			key:  cfgTls.Key("key").String(),
+			ca:   cfgTls.Key("ca").String(),
 		},
 	}
 
 	if result.master.host == "" {
 		return nil, errors.New("config: master.host missing")
+	}
+
+	if result.tls.cert == "" {
+		return nil, errors.New("config: tls.cert missing")
+	}
+
+	if result.tls.key == "" {
+		return nil, errors.New("config: tls.key missing")
+	}
+
+	if result.tls.ca == "" {
+		return nil, errors.New("config: tls.ca missing")
 	}
 
 	return result, nil

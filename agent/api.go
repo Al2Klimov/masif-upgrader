@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -25,7 +27,41 @@ func (self *badHttpBody) Error() string {
 }
 
 type api struct {
-	host string
+	baseUrl string
+	client  *http.Client
+}
+
+func newApi(master string, tlsCfg struct{ cert, key, ca string }) (result *api, err error) {
+	clientCert, errLXKP := tls.LoadX509KeyPair(tlsCfg.cert, tlsCfg.key)
+	if errLXKP != nil {
+		return nil, errLXKP
+	}
+
+	rootCA, errRF := ioutil.ReadFile(tlsCfg.ca)
+	if errRF != nil {
+		return nil, errRF
+	}
+
+	rootCAs := x509.NewCertPool()
+	rootCAs.AppendCertsFromPEM(rootCA)
+
+	client := &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				Certificates: []tls.Certificate{clientCert},
+				RootCAs:      rootCAs,
+				CipherSuites: []uint16{
+					tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+					tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,
+					tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+					tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,
+				},
+				MinVersion: tls.VersionTLS12,
+			},
+		},
+	}
+
+	return &api{baseUrl: "https://" + master + "/v1", client: client}, nil
 }
 
 var pkgMgrActions2api = map[pkgMgrAction]string{
@@ -71,8 +107,8 @@ func (self *api) reportTasks(tasks map[pkgMgrTask]struct{}) (approvedTasks map[p
 		return nil, errJM
 	}
 
-	res, errPost := http.Post(
-		"https://"+self.host+"/v1/pending-tasks",
+	res, errPost := self.client.Post(
+		self.baseUrl+"/pending-tasks",
 		"application/json",
 		bytes.NewBuffer(jsn),
 	)

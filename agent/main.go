@@ -54,12 +54,14 @@ func runAgent() error {
 		return errRT
 	}
 
-TryUpdate:
 	for {
 		tasks, errWIUA := ourPkgMgr.whatIfUpgradeAll()
 		if errWIUA != nil {
 			return errWIUA
 		}
+
+		nextPackage := ""
+		actionsNeeded := ^uint64(0)
 
 	PossibleActions:
 		for task := range tasks {
@@ -75,15 +77,20 @@ TryUpdate:
 					}
 				}
 
-				if errU := ourPkgMgr.upgrade(task.packageName); errU != nil {
-					return errU
+				if actionsNeededForUpgrade := uint64(len(tasksOnUpgrade)); actionsNeededForUpgrade < actionsNeeded {
+					actionsNeeded = actionsNeededForUpgrade
+					nextPackage = task.packageName
 				}
-
-				continue TryUpdate
 			}
 		}
 
-		break
+		if nextPackage == "" {
+			break
+		}
+
+		if errU := ourPkgMgr.upgrade(nextPackage); errU != nil {
+			return errU
+		}
 	}
 
 	return nil

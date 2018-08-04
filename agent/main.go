@@ -49,47 +49,49 @@ func runAgent() error {
 		return errWIUA
 	}
 
-	approvedTasks, errRT := master.reportTasks(tasks)
-	if errRT != nil {
-		return errRT
-	}
-
-	for {
-		tasks, errWIUA := ourPkgMgr.whatIfUpgradeAll()
-		if errWIUA != nil {
-			return errWIUA
+	if len(tasks) > 0 {
+		approvedTasks, errRT := master.reportTasks(tasks)
+		if errRT != nil {
+			return errRT
 		}
 
-		nextPackage := ""
-		actionsNeeded := ^uint64(0)
+		for {
+			tasks, errWIUA := ourPkgMgr.whatIfUpgradeAll()
+			if errWIUA != nil {
+				return errWIUA
+			}
 
-	PossibleActions:
-		for task := range tasks {
-			if _, isApproved := approvedTasks[task]; isApproved && task.action == pkgMgrUpdate {
-				tasksOnUpgrade, errWIU := ourPkgMgr.whatIfUpgrade(task.packageName)
-				if errWIU != nil {
-					return errWIU
-				}
+			nextPackage := ""
+			actionsNeeded := ^uint64(0)
 
-				for taskOnUpgrade := range tasksOnUpgrade {
-					if _, approved := approvedTasks[taskOnUpgrade]; !approved {
-						continue PossibleActions
+		PossibleActions:
+			for task := range tasks {
+				if _, isApproved := approvedTasks[task]; isApproved && task.action == pkgMgrUpdate {
+					tasksOnUpgrade, errWIU := ourPkgMgr.whatIfUpgrade(task.packageName)
+					if errWIU != nil {
+						return errWIU
+					}
+
+					for taskOnUpgrade := range tasksOnUpgrade {
+						if _, approved := approvedTasks[taskOnUpgrade]; !approved {
+							continue PossibleActions
+						}
+					}
+
+					if actionsNeededForUpgrade := uint64(len(tasksOnUpgrade)); actionsNeededForUpgrade < actionsNeeded {
+						actionsNeeded = actionsNeededForUpgrade
+						nextPackage = task.packageName
 					}
 				}
-
-				if actionsNeededForUpgrade := uint64(len(tasksOnUpgrade)); actionsNeededForUpgrade < actionsNeeded {
-					actionsNeeded = actionsNeededForUpgrade
-					nextPackage = task.packageName
-				}
 			}
-		}
 
-		if nextPackage == "" {
-			break
-		}
+			if nextPackage == "" {
+				break
+			}
 
-		if errU := ourPkgMgr.upgrade(nextPackage); errU != nil {
-			return errU
+			if errU := ourPkgMgr.upgrade(nextPackage); errU != nil {
+				return errU
+			}
 		}
 	}
 

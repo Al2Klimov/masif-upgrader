@@ -54,8 +54,39 @@ func runAgent() error {
 		return errRT
 	}
 
-	_, errPF := fmt.Printf("%#v", approvedTasks)
-	return errPF
+TryUpdate:
+	for {
+		tasks, errWIUA := ourPkgMgr.whatIfUpgradeAll()
+		if errWIUA != nil {
+			return errWIUA
+		}
+
+	PossibleActions:
+		for task := range tasks {
+			if _, isApproved := approvedTasks[task]; isApproved && task.action == pkgMgrUpdate {
+				tasksOnUpgrade, errWIU := ourPkgMgr.whatIfUpgrade(task.packageName)
+				if errWIU != nil {
+					return errWIU
+				}
+
+				for taskOnUpgrade := range tasksOnUpgrade {
+					if _, approved := approvedTasks[taskOnUpgrade]; !approved {
+						continue PossibleActions
+					}
+				}
+
+				if errU := ourPkgMgr.upgrade(task.packageName); errU != nil {
+					return errU
+				}
+
+				continue TryUpdate
+			}
+		}
+
+		break
+	}
+
+	return nil
 }
 
 func loadCfg() (config *settings, err error) {

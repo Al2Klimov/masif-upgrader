@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -22,16 +21,8 @@ func main() {
 	}
 }
 
-var apiPkgMgrActions = map[pkgMgrAction]string{
-	pkgMgrInstall:   "install",
-	pkgMgrUpdate:    "update",
-	pkgMgrConfigure: "configure",
-	pkgMgrRemove:    "remove",
-	pkgMgrPurge:     "purge",
-}
-
 func runAgent() error {
-	_, errLC := loadCfg()
+	cfg, errLC := loadCfg()
 	if errLC != nil {
 		return errLC
 	}
@@ -50,34 +41,13 @@ func runAgent() error {
 		return errWIUA
 	}
 
-	apiTasks := make([]interface{}, len(tasks))
-	apiTaskIdx := 0
-
-	for task := range tasks {
-		record := map[string]interface{}{
-			"package": task.packageName,
-			"action":  apiPkgMgrActions[task.action],
-		}
-
-		if task.fromVersion != "" {
-			record["from_version"] = task.fromVersion
-		}
-
-		if task.toVersion != "" {
-			record["to_version"] = task.toVersion
-		}
-
-		apiTasks[apiTaskIdx] = record
-		apiTaskIdx++
+	approvedTasks, errRT := (&api{host: cfg.master.host}).reportTasks(tasks)
+	if errRT != nil {
+		return errRT
 	}
 
-	jsn, errJM := json.Marshal(apiTasks)
-	if errJM != nil {
-		return errJM
-	}
-
-	_, errPL := fmt.Println(string(jsn))
-	return errPL
+	_, errPF := fmt.Printf("%#v", approvedTasks)
+	return errPF
 }
 
 func loadCfg() (config *settings, err error) {

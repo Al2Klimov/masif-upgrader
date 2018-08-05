@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"errors"
 	"flag"
 	"fmt"
@@ -15,7 +16,12 @@ type settings struct {
 	tls struct {
 		cert, key, ca, crl string
 	}
+	db struct {
+		typ, dsn string
+	}
 }
+
+var db *sql.DB = nil
 
 func main() {
 	if err := runMaster(); err != nil {
@@ -35,6 +41,11 @@ func runMaster() error {
 		return errNA
 	}
 
+	var errDB error
+	if db, errDB = sql.Open(cfg.db.typ, cfg.db.dsn); errDB != nil {
+		return errDB
+	}
+
 	return httpd.ListenAndServeTLS("", "")
 }
 
@@ -52,6 +63,7 @@ func loadCfg() (config *settings, err error) {
 	}
 
 	cfgTls := cfg.Section("tls")
+	cfgDb := cfg.Section("db")
 	result := &settings{
 		api: struct{ listen string }{
 			listen: cfg.Section("api").Key("listen").String(),
@@ -61,6 +73,10 @@ func loadCfg() (config *settings, err error) {
 			key:  cfgTls.Key("key").String(),
 			ca:   cfgTls.Key("ca").String(),
 			crl:  cfgTls.Key("crl").String(),
+		},
+		db: struct{ typ, dsn string }{
+			typ: cfgDb.Key("type").String(),
+			dsn: cfgDb.Key("dsn").String(),
 		},
 	}
 
@@ -78,6 +94,14 @@ func loadCfg() (config *settings, err error) {
 
 	if result.tls.ca == "" {
 		return nil, errors.New("config: tls.ca missing")
+	}
+
+	if result.db.typ == "" {
+		return nil, errors.New("config: db.type missing")
+	}
+
+	if result.db.dsn == "" {
+		return nil, errors.New("config: db.dsn missing")
 	}
 
 	return result, nil

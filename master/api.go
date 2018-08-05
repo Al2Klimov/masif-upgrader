@@ -109,6 +109,12 @@ func apiMkCrlValidator(crlPath string) func(rawCerts [][]byte, verifiedChains []
 }
 
 func apiV1PendingTasks(writer http.ResponseWriter, request *http.Request) {
+	cn := request.TLS.VerifiedChains[0][0].Subject.CommonName
+	if cn == "" {
+		writer.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
 	if request.Method != "POST" {
 		writer.WriteHeader(http.StatusMethodNotAllowed)
 		return
@@ -120,16 +126,27 @@ func apiV1PendingTasks(writer http.ResponseWriter, request *http.Request) {
 		return
 	}
 
-	_, errA2PMT := common.Api2PkgMgrTasks(body)
+	tasks, errA2PMT := common.Api2PkgMgrTasks(body)
 	if errA2PMT != nil {
 		writer.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
-	// TODO: something useful
+	approvedTasks, errAUPT := dbUpdatePendingTasks(cn, tasks)
+	if errAUPT != nil {
+		writer.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	jsn, errPMT2A := common.PkgMgrTasks2Api(approvedTasks)
+	if errPMT2A != nil {
+		writer.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
 	writer.Header().Set("Content-Type", "application/json")
 	writer.WriteHeader(http.StatusOK)
-	writer.Write([]byte("[]"))
+	writer.Write(jsn)
 }
 
 func apiDefault(writer http.ResponseWriter, request *http.Request) {

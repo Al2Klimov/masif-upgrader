@@ -4,7 +4,8 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	ini "gopkg.in/ini.v1"
+	"github.com/Al2Klimov/masif-upgrader/common"
+	"gopkg.in/ini.v1"
 	"os"
 	"time"
 )
@@ -49,8 +50,8 @@ func runAgent() error {
 	}
 
 	var errWIUA error
-	var tasks map[pkgMgrTask]struct{} = nil
-	approvedTasks := map[pkgMgrTask]struct{}{}
+	var tasks map[common.PkgMgrTask]struct{} = nil
+	approvedTasks := map[common.PkgMgrTask]struct{}{}
 	interval := struct{ check, report time.Duration }{
 		check:  time.Duration(cfg.interval.check) * time.Second,
 		report: time.Duration(cfg.interval.report) * time.Second,
@@ -64,7 +65,7 @@ func runAgent() error {
 		}
 
 		if len(tasks) > 0 {
-			notApprovedTasks := map[pkgMgrTask]struct{}{}
+			notApprovedTasks := map[common.PkgMgrTask]struct{}{}
 
 			for task := range tasks {
 				if _, isApproved := approvedTasks[task]; !isApproved {
@@ -97,10 +98,10 @@ func runAgent() error {
 
 			PossibleActions:
 				for task := range tasks {
-					if _, isApproved := approvedTasks[task]; isApproved && task.action == pkgMgrUpdate {
+					if _, isApproved := approvedTasks[task]; isApproved && task.Action == common.PkgMgrUpdate {
 						tasks = nil
 
-						tasksOnUpgrade, errWIU := ourPkgMgr.whatIfUpgrade(task.packageName)
+						tasksOnUpgrade, errWIU := ourPkgMgr.whatIfUpgrade(task.PackageName)
 						if errWIU != nil {
 							return errWIU
 						}
@@ -114,7 +115,7 @@ func runAgent() error {
 						actionsNeededForUpgrade := uint64(len(tasksOnUpgrade))
 						if actionsNeededForUpgrade < actionsNeeded {
 							actionsNeeded = actionsNeededForUpgrade
-							nextPackage = task.packageName
+							nextPackage = task.PackageName
 						}
 					}
 				}
@@ -140,10 +141,10 @@ func runAgent() error {
 				tasks = nil
 				time.Sleep(interval.report)
 			} else {
-				approvedTasks = map[pkgMgrTask]struct{}{}
+				approvedTasks = map[common.PkgMgrTask]struct{}{}
 			}
 		} else {
-			approvedTasks = map[pkgMgrTask]struct{}{}
+			approvedTasks = map[common.PkgMgrTask]struct{}{}
 			tasks = nil
 			time.Sleep(interval.check)
 		}

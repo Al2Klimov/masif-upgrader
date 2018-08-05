@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"github.com/Al2Klimov/masif-upgrader/common"
 	"os"
 	"os/exec"
 	"regexp"
@@ -33,11 +34,11 @@ func newApt() (result *apt, err error) {
 	return
 }
 
-func (self *apt) whatIfUpgradeAll() (tasks map[pkgMgrTask]struct{}, err error) {
+func (self *apt) whatIfUpgradeAll() (tasks map[common.PkgMgrTask]struct{}, err error) {
 	return self.whatIf("upgrade")
 }
 
-func (self *apt) whatIfUpgrade(packageName string) (tasks map[pkgMgrTask]struct{}, err error) {
+func (self *apt) whatIfUpgrade(packageName string) (tasks map[common.PkgMgrTask]struct{}, err error) {
 	return self.whatIf("upgrade", packageName)
 }
 
@@ -55,7 +56,7 @@ func (self *apt) upgrade(packageName string) error {
 
 var aptLineRgx = regexp.MustCompile(`\A([^ ]+) ([^ ]+)(?: \[([^]]+)])?(?: \(([^)]+)\))?\z`)
 
-func (self *apt) whatIf(args ...string) (tasks map[pkgMgrTask]struct{}, err error) {
+func (self *apt) whatIf(args ...string) (tasks map[common.PkgMgrTask]struct{}, err error) {
 	cmd := exec.Command(self.exe, append([]string{"-sqq"}, args...)...)
 	outBuf := bytes.Buffer{}
 
@@ -69,7 +70,7 @@ func (self *apt) whatIf(args ...string) (tasks map[pkgMgrTask]struct{}, err erro
 		return nil, errRun
 	}
 
-	tasks = map[pkgMgrTask]struct{}{}
+	tasks = map[common.PkgMgrTask]struct{}{}
 
 	for _, line := range strings.Split(outBuf.String(), "\n") {
 		if line != "" {
@@ -78,44 +79,44 @@ func (self *apt) whatIf(args ...string) (tasks map[pkgMgrTask]struct{}, err erro
 				return nil, &aptBadOutput{output: line}
 			}
 
-			nextTask := pkgMgrTask{
-				packageName: match[2],
-				fromVersion: match[3],
-				toVersion:   match[4],
+			nextTask := common.PkgMgrTask{
+				PackageName: match[2],
+				FromVersion: match[3],
+				ToVersion:   match[4],
 			}
 
 			switch match[1] {
 			case "Inst":
-				if nextTask.toVersion == "" {
+				if nextTask.ToVersion == "" {
 					return nil, &aptBadOutput{output: line}
 				}
 
-				if nextTask.fromVersion == "" {
-					nextTask.action = pkgMgrInstall
+				if nextTask.FromVersion == "" {
+					nextTask.Action = common.PkgMgrInstall
 				} else {
-					nextTask.action = pkgMgrUpdate
+					nextTask.Action = common.PkgMgrUpdate
 				}
 
 			case "Conf":
-				if (nextTask.fromVersion == "") == (nextTask.toVersion == "") {
+				if (nextTask.FromVersion == "") == (nextTask.ToVersion == "") {
 					return nil, &aptBadOutput{output: line}
 				}
 
-				nextTask.action = pkgMgrConfigure
+				nextTask.Action = common.PkgMgrConfigure
 
 			case "Remv":
-				if nextTask.fromVersion == "" || nextTask.toVersion != "" {
+				if nextTask.FromVersion == "" || nextTask.ToVersion != "" {
 					return nil, &aptBadOutput{output: line}
 				}
 
-				nextTask.action = pkgMgrRemove
+				nextTask.Action = common.PkgMgrRemove
 
 			case "Purg":
-				if nextTask.fromVersion == "" || nextTask.toVersion != "" {
+				if nextTask.FromVersion == "" || nextTask.ToVersion != "" {
 					return nil, &aptBadOutput{output: line}
 				}
 
-				nextTask.action = pkgMgrPurge
+				nextTask.Action = common.PkgMgrPurge
 			}
 
 			tasks[nextTask] = struct{}{}

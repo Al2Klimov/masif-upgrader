@@ -1,0 +1,4 @@
+Module: masifupgrader
+Description: Masif Upgrader (UI)
+ Masif Upgrader's admin frontend.
+ Used to observe and control all the agents.

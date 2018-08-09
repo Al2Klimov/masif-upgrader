@@ -8,6 +8,7 @@ import (
 	"github.com/Al2Klimov/masif-upgrader/common"
 	"io/ioutil"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 )
@@ -56,12 +57,29 @@ func apiMkCrlValidator(crlPath string) func(rawCerts [][]byte, verifiedChains []
 	mutex := sync.RWMutex{}
 	var timesUpdated uint64 = 0
 	var crl *pkix.CertificateList = nil
+	lastUpdate := time.Now()
 	var revokedCerts map[string]struct{} = nil
 
 	return func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
 		mutex.RLock()
 
-		if crl == nil || crl.HasExpired(time.Now()) {
+		update := false
+
+		if crl == nil {
+			update = true
+		} else {
+			if crl.HasExpired(time.Now()) {
+				stats, errStat := os.Stat(crlPath)
+				if errStat != nil {
+					mutex.RUnlock()
+					return errStat
+				}
+
+				update = stats.ModTime().After(lastUpdate)
+			}
+		}
+
+		if update {
 			timesUpdatedLastSeen := timesUpdated
 
 			mutex.RUnlock()
@@ -69,6 +87,8 @@ func apiMkCrlValidator(crlPath string) func(rawCerts [][]byte, verifiedChains []
 
 			if timesUpdated == timesUpdatedLastSeen {
 				timesUpdated++
+
+				now := time.Now()
 
 				rawCRL, errRF := ioutil.ReadFile(crlPath)
 				if errRF != nil {
@@ -83,6 +103,7 @@ func apiMkCrlValidator(crlPath string) func(rawCerts [][]byte, verifiedChains []
 				}
 
 				crl = freshCRL
+				lastUpdate = now
 
 				revokedCerts = map[string]struct{}{}
 				for _, revokedCert := range crl.TBSCertList.RevokedCertificates {

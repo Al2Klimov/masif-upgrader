@@ -19,5 +19,6 @@ CREATE TABLE task (
   approved      TINYINT(1) unsigned NOT NULL,
 
   KEY (agent),
-  KEY (package)
+  KEY (package),
+  KEY (approved)
 );

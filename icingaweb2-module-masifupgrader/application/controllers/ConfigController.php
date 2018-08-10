@@ -10,6 +10,8 @@ class ConfigController extends Controller
 {
     public function backendAction()
     {
+        $this->assertPermission('config/modules');
+
         $this->view->form = $form = new BackendForm();
         $form->setIniConfig(Config::module('masifupgrader'))
             ->handleRequest();

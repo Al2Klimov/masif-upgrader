@@ -82,7 +82,7 @@ EOQ
                     $toVersionsNotNull = 0;
 
                     foreach ($toVersions as $toVersion => $_) {
-                        if ($toVersion === null) {
+                        if ($toVersion === '') {
                             $toVersionHasNull = true;
                         } else {
                             ++$toVersionsNotNull;
@@ -202,7 +202,7 @@ EOQ
                 krsort($toVersions, SORT_NATURAL);
 
                 foreach ($toVersions as $toVersion => $_) {
-                    if ($toVersion === null) {
+                    if ($toVersion === '') {
                         $toVersion = $this->translate('N/A');
                     }
 

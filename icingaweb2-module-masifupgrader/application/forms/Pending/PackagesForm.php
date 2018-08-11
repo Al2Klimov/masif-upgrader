@@ -68,45 +68,7 @@ EOQ
                 return $this->agents = [];
             }
 
-            $params = [];
-            $packageFilters = [];
-
-            foreach ($filter as $package => $actions) {
-                $params[] = $package;
-                $actionFilters = [];
-
-                foreach ($actions as $action => $toVersions) {
-                    $params[] = $action;
-
-                    $toVersionHasNull = false;
-                    $toVersionsNotNull = 0;
-
-                    foreach ($toVersions as $toVersion => $_) {
-                        if ($toVersion === '') {
-                            $toVersionHasNull = true;
-                        } else {
-                            ++$toVersionsNotNull;
-                            $params[] = $toVersion;
-                        }
-                    }
-
-                    $toVersionFilters = [];
-
-                    if ($toVersionHasNull) {
-                        $toVersionFilters[] = 't2.to_version IS NULL';
-                    }
-
-                    if ($toVersionsNotNull) {
-                        $toVersionFilters[] = 't2.to_version IN (' . implode(',', array_fill(0, $toVersionsNotNull, '?')) . ')';
-                    }
-
-                    $actionFilters[] = '(t2.action=? AND (' . implode(' OR ', $toVersionFilters) . '))';
-                }
-
-                $packageFilters[] = '(t2.package=(SELECT p.id FROM package p WHERE p.name=?) AND (' . implode(' OR ', $actionFilters) . '))';
-            }
-
-            $packageFilters = implode(' OR ', $packageFilters);
+            list($packageFilters, $params) = $this->filterTasksByActions('t2', 'p', $filter);
 
             $rawAgents = $this->fetchAll(
                 <<<EOQ
@@ -127,6 +89,58 @@ EOQ
         }
 
         return $this->agents;
+    }
+
+    /**
+     * @param string $tasksTableAlias
+     * @param string $packagesTableAlias
+     * @param string $filter
+     *
+     * @return array
+     */
+    protected function filterTasksByActions($tasksTableAlias, $packagesTableAlias, $filter)
+    {
+        $t = $tasksTableAlias;
+        $p = $packagesTableAlias;
+        $params = [];
+        $packageFilters = [];
+
+        foreach ($filter as $package => $actions) {
+            $params[] = $package;
+            $actionFilters = [];
+
+            foreach ($actions as $action => $toVersions) {
+                $params[] = $action;
+
+                $toVersionHasNull = false;
+                $toVersionsNotNull = 0;
+
+                foreach ($toVersions as $toVersion => $_) {
+                    if ($toVersion === '') {
+                        $toVersionHasNull = true;
+                    } else {
+                        ++$toVersionsNotNull;
+                        $params[] = $toVersion;
+                    }
+                }
+
+                $toVersionFilters = [];
+
+                if ($toVersionHasNull) {
+                    $toVersionFilters[] = "$t.to_version IS NULL";
+                }
+
+                if ($toVersionsNotNull) {
+                    $toVersionFilters[] = "$t.to_version IN (" . implode(',', array_fill(0, $toVersionsNotNull, '?')) . ')';
+                }
+
+                $actionFilters[] = "($t.action=? AND (" . implode(' OR ', $toVersionFilters) . '))';
+            }
+
+            $packageFilters[] = "($t.package=(SELECT $p.id FROM package $p WHERE $p.name=?) AND (" . implode(' OR ', $actionFilters) . '))';
+        }
+
+        return [implode(' OR ', $packageFilters), $params];
     }
 
     public function init()
@@ -153,7 +167,7 @@ EOQ
         }
 
         if (($this->holdOn = isset($formData['filter_agents_first']) && $formData['filter_agents_first'])
-            || (isset($formData['filter_agents']) && $formData['filter_agents'])) {
+            || isset($formData['filter_agents'])) {
             $this->addElement('hidden', 'filter_agents', ['value' => '1']);
 
             foreach ($this->getAgents($agentFilter) as $agent => $packages) {
@@ -257,7 +271,99 @@ EOQ
             return false;
         }
 
-        // TODO
+        $agentsWildcard = $this->getElement('filter_agents') === null;
+
+        if ($agentsWildcard) {
+            $agentFilter = '';
+            $params = [];
+        } else {
+            $params = array_keys($this->getAgents());
+            if (empty($params)) {
+                return false;
+            }
+
+            $agentFilter = ' AND t.agent IN (SELECT a.id FROM agent a WHERE a.name IN (' . implode(',', array_fill(0, count($params), '?')) . '))';
+        }
+
+        $taskFilter = [];
+
+        foreach ($this->getTasks() as $package => list($agents, $actions)) {
+            foreach ($actions as $action => $toVersions) {
+                foreach ($toVersions as $toVersion => $_) {
+                    /** @var \Zend_Form_Element_Checkbox $checkbox */
+                    $checkbox = $this->getElement(implode('_', [bin2hex($package), $action, bin2hex($toVersion)]));
+
+                    if ($checkbox->isChecked()) {
+                        $taskFilter[$package][$action][$toVersion] = null;
+                    }
+                }
+            }
+        }
+
+        if (empty($taskFilter)) {
+            return false;
+        }
+
+        list($packageFilters, $packageFilterParams) = $this->filterTasksByActions('t', 'p2', $taskFilter);
+
+        $filter = "t.approved=0$agentFilter AND ($packageFilters)";
+        $params = array_merge($params, $packageFilterParams);
+
+        $this->transaction(function() use($filter, $params, $agentsWildcard) {
+            $pending = $this->fetchAll(
+                "SELECT t.agent, t.package, t.action, t.to_version FROM task t WHERE $filter",
+                $params
+            );
+
+            if (empty($pending)) {
+                return;
+            }
+
+            $this->execSql("DELETE t FROM task t WHERE $filter", $params);
+
+            $approvals = [];
+
+            foreach ($pending as list($agent, $package, $action, $toVersion)) {
+                if ($agentsWildcard) {
+                    $agent = null;
+                }
+
+                $approvals[$agent][$package][$action][$toVersion] = null;
+            }
+
+            $insertParams = [];
+            $rows = 0;
+
+            foreach ($approvals as $agent => $tasks) {
+                if ($agent === '') {
+                    $agent = null;
+                }
+
+                foreach ($tasks as $package => $actions) {
+                    foreach ($actions as $action => $toVersions) {
+                        foreach ($toVersions as $toVersion => $_) {
+                            if ($toVersion === '') {
+                                $toVersion = null;
+                            }
+
+                            ++$rows;
+
+                            $insertParams[] = $agent;
+                            $insertParams[] = $package;
+                            $insertParams[] = $toVersion;
+                            $insertParams[] = $action;
+                        }
+                    }
+                }
+            }
+
+            $this->execSql(
+                'INSERT INTO task(agent, package, from_version, to_version, action, approved) VALUES '
+                    . implode(',', array_fill(0, $rows, '(?,?,NULL,?,?,1)')),
+                $insertParams
+            );
+        });
+
         return true;
     }
 }

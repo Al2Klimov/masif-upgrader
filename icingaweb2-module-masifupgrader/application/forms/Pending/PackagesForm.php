@@ -57,18 +57,66 @@ EOQ
     }
 
     /**
+     * @param array $filter
+     *
      * @return array
      */
-    protected function getAgents()
+    protected function getAgents($filter = [])
     {
         if ($this->agents === null) {
+            if (empty($filter)) {
+                return $this->agents = [];
+            }
+
+            $params = [];
+            $packageFilters = [];
+
+            foreach ($filter as $package => $actions) {
+                $params[] = $package;
+                $actionFilters = [];
+
+                foreach ($actions as $action => $toVersions) {
+                    $params[] = $action;
+
+                    $toVersionHasNull = false;
+                    $toVersionsNotNull = 0;
+
+                    foreach ($toVersions as $toVersion => $_) {
+                        if ($toVersion === null) {
+                            $toVersionHasNull = true;
+                        } else {
+                            ++$toVersionsNotNull;
+                            $params[] = $toVersion;
+                        }
+                    }
+
+                    $toVersionFilters = [];
+
+                    if ($toVersionHasNull) {
+                        $toVersionFilters[] = 't2.to_version IS NULL';
+                    }
+
+                    if ($toVersionsNotNull) {
+                        $toVersionFilters[] = 't2.to_version IN (' . implode(',', array_fill(0, $toVersionsNotNull, '?')) . ')';
+                    }
+
+                    $actionFilters[] = '(t2.action=? AND (' . implode(' OR ', $toVersionFilters) . '))';
+                }
+
+                $packageFilters[] = '(t2.package=(SELECT p.id FROM package p WHERE p.name=?) AND (' . implode(' OR ', $actionFilters) . '))';
+            }
+
+            $packageFilters = implode(' OR ', $packageFilters);
+
             $rawAgents = $this->fetchAll(
                 <<<EOQ
 SELECT a.name, (SELECT COUNT(DISTINCT t1.package) FROM task t1 WHERE t1.agent=a.id AND t1.approved=0)
 FROM agent a
-WHERE EXISTS (SELECT * FROM task t2 WHERE t2.agent=a.id AND t2.approved=0)
+WHERE a.id IN (SELECT t2.agent FROM task t2 WHERE t2.approved=0 AND ($packageFilters))
 ORDER BY (SELECT COUNT(DISTINCT t1.package) FROM task t1 WHERE t1.agent=a.id AND t1.approved=0) DESC, a.name ASC
 EOQ
+                ,
+                $params
             );
 
             $this->agents = [];
@@ -89,14 +137,17 @@ EOQ
 
     public function createElements(array $formData)
     {
+        $agentFilter = [];
+
         foreach ($this->getTasks() as $package => list($agents, $actions)) {
             foreach ($actions as $action => $toVersions) {
                 foreach ($toVersions as $toVersion => $_) {
-                    $this->addHeadlessElement(
-                        'checkbox',
-                        implode('_', [bin2hex($package), $action, bin2hex($toVersion)]),
-                        []
-                    );
+                    $checkboxName = implode('_', [bin2hex($package), $action, bin2hex($toVersion)]);
+                    $this->addHeadlessElement('checkbox', $checkboxName, []);
+
+                    if (isset($formData[$checkboxName]) && $formData[$checkboxName]) {
+                        $agentFilter[$package][$action][$toVersion] = null;
+                    }
                 }
             }
         }
@@ -105,7 +156,7 @@ EOQ
             || (isset($formData['filter_agents']) && $formData['filter_agents'])) {
             $this->addElement('hidden', 'filter_agents', ['value' => '1']);
 
-            foreach ($this->getAgents() as $agent => $packages) {
+            foreach ($this->getAgents($agentFilter) as $agent => $packages) {
                 $this->addHeadlessElement('checkbox', 'agent_' . bin2hex($agent), []);
             }
         } else {

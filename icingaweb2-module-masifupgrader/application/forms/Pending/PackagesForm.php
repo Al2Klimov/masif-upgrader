@@ -74,11 +74,9 @@ EOQ
         }
 
         $result = $this->renderHeadless($view)
-            . "<table class='common-table'><thead><tr><th>{$view->escape($this->translate('Package'))}</th>"
-            . "<th>{$view->escape($this->translate('Agents awaiting approval'))}</th>"
-            . "<th>{$view->escape($this->translate('Action'))}</th>"
-            . "<th>{$view->escape($this->translate('Target version'))}</th>"
-            . "<th>{$view->escape($this->translate('Approve'))}</th></tr></thead><tbody>";
+            . "<table class='common-table'><thead><tr><th colspan='2'>{$view->escape($this->translate('Package, agents awaiting approval'))}</th>"
+            . "<th colspan='2'>{$view->escape($this->translate('Action'))}</th>"
+            . "<th colspan='2'>{$view->escape($this->translate('Target version'))}</th></tr></thead><tbody>";
 
         $rows = [];
         $currentRow = 0;
@@ -111,14 +109,13 @@ EOQ
                         $toVersion = $this->translate('N/A');
                     }
 
+                    $approve = $this->getElement(implode('_', [bin2hex($package), $action, bin2hex($toVersion)]));
+
                     $rows[] = [
                         null,
                         null,
                         null,
-                        "<td>{$view->escape($toVersion)}</td>",
-                        "<td>{$this->getElement(
-                            implode('_', [bin2hex($package), $action, bin2hex($toVersion)])
-                        )->render($view)}</td>"
+                        "<td colspan='2'>{$approve->render($view)}<label for='{$view->escape($approve->getId())}'>&emsp;{$view->escape($toVersion)}</label></td>"
                     ];
 
                     ++$currentRow;
@@ -126,7 +123,7 @@ EOQ
 
                 $actionRows = count($toVersions);
                 $packageRows += $actionRows;
-                $rows[$actionOnRow][2] = "<td rowspan='$actionRows'>{$view->escape($actionLabels[$action])}</td>";
+                $rows[$actionOnRow][2] = "<td rowspan='$actionRows' colspan='2'>{$view->escape($actionLabels[$action])}</td>";
             }
 
             $rows[$packageOnRow][0] = "<td rowspan='$packageRows'>{$view->escape($package)}</td>";
@@ -137,7 +134,7 @@ EOQ
             $result .= '<tr>' . implode('', $row) . '</tr>';
         }
 
-        return "$result<tr><td colspan='4'></td><td>{$this->getElement('btn_submit')->render($view)}</td></tr></tbody></table>";
+        return "$result<tr><td colspan='4'></td><td colspan='2'>{$this->getElement('btn_submit')->render($view)}</td></tr></tbody></table>";
     }
 
     public function onSuccess()

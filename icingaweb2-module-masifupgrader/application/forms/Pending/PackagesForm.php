@@ -185,9 +185,9 @@ EOQ
         }
 
         $result = $this->renderHeadless($view)
-            . "<table class='common-table'><thead><tr><th colspan='2'>{$view->escape($this->translate('Package, agents awaiting approval'))}</th>"
-            . "<th colspan='2'>{$view->escape($this->translate('Action'))}</th>"
-            . "<th colspan='2'>{$view->escape($this->translate('Target version'))}</th></tr></thead><tbody>";
+            . "<table class='common-table'><thead><tr><th colspan='3'>{$view->escape($this->translate('Package, agents awaiting approval'))}</th>"
+            . "<th>{$view->escape($this->translate('Action'))}</th>"
+            . "<th colspan='3'>{$view->escape($this->translate('Target version'))}</th></tr></thead><tbody>";
 
         $rows = [];
         $currentRow = 0;
@@ -226,7 +226,7 @@ EOQ
                         null,
                         null,
                         null,
-                        "<td colspan='2'>{$approve->render($view)}<label for='{$view->escape($approve->getId())}'>&emsp;{$view->escape($toVersion)}</label></td>"
+                        "<td colspan='3'>{$approve->render($view)}<label for='{$view->escape($approve->getId())}'>&emsp;{$view->escape($toVersion)}</label></td>"
                     ];
 
                     ++$currentRow;
@@ -234,10 +234,10 @@ EOQ
 
                 $actionRows = count($toVersions);
                 $packageRows += $actionRows;
-                $rows[$actionOnRow][2] = "<td rowspan='$actionRows' colspan='2'>{$view->escape($actionLabels[$action])}</td>";
+                $rows[$actionOnRow][2] = "<td rowspan='$actionRows'>{$view->escape($actionLabels[$action])}</td>";
             }
 
-            $rows[$packageOnRow][0] = "<td rowspan='$packageRows'>{$view->escape($package)}</td>";
+            $rows[$packageOnRow][0] = "<td rowspan='$packageRows' colspan='2'>{$view->escape($package)}</td>";
             $rows[$packageOnRow][1] = "<td rowspan='$packageRows'>$agents</td>";
         }
 
@@ -248,9 +248,9 @@ EOQ
         if ($this->getElement('filter_agents') === null) {
             $filterAgents = $this->getElement('filter_agents_first');
 
-            $result .= "<tr><td rowspan='2' colspan='4'></td><td colspan='2'>{$filterAgents->render($view)}"
+            $result .= "<tr><td rowspan='2' colspan='4'></td><td colspan='3'>{$filterAgents->render($view)}"
                 . "<label for='{$view->escape($filterAgents->getId())}'>&emsp;{$view->escape($this->translate('Select specific agents first'))}</label></td></tr>"
-                . "<tr><td colspan='2'>{$this->getElement('btn_submit')->render($view)}</td></tr></tbody></table>";
+                . "<tr><td colspan='3'>{$this->getElement('btn_submit')->render($view)}</td></tr></tbody></table>";
         } else {
             $result .= "</tbody></table><table class='common-table'><thead><tr><th colspan='2'>{$view->escape($this->translate('Agent, pending packages'))}</th></tr></thead><tbody>";
 

@@ -258,18 +258,22 @@ var db2pkgMgrAction = map[string]common.PkgMgrAction{
 	"purge":     common.PkgMgrPurge,
 }
 
-func dbGetTasks(tx *sql.Tx, agent interface{}, approved uint8) (tasks map[common.PkgMgrTask]struct{}, err error) {
-	rows, errQuery := dbQuery(
-		tx,
-		`
+var dbGetTasksQuery = `
 SELECT p.name, t.from_version, t.to_version, t.action
 FROM task t
 LEFT JOIN package p ON p.id=t.package
-WHERE t.agent=? AND t.approved=?
-`,
-		agent,
-		approved,
-	)
+`
+
+func dbGetTasks(tx *sql.Tx, agent interface{}, approved uint8) (tasks map[common.PkgMgrTask]struct{}, err error) {
+	var rows [][]interface{}
+	var errQuery error
+
+	if agent == nil {
+		rows, errQuery = dbQuery(tx, dbGetTasksQuery+" WHERE t.agent IS NULL AND t.approved=?", approved)
+	} else {
+		rows, errQuery = dbQuery(tx, dbGetTasksQuery+" WHERE t.agent=? AND t.approved=?", agent, approved)
+	}
+
 	if errQuery != nil {
 		return nil, errQuery
 	}

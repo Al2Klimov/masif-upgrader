@@ -66,7 +66,7 @@ func (self *apt) upgrade(critOpRunner criticalOperationRunner, packageName strin
 	return
 }
 
-var aptLineRgx = regexp.MustCompile(`\A([^ ]+) ([^ ]+)(?: \[([^]]+)])?(?: \(([^)]+)\))?\z`)
+var aptLineRgx = regexp.MustCompile(`\A([^ ]+) ([^ ]+)(?: \[([^]]+)])?(?: \(([^)]+)\))?`)
 
 func (self *apt) whatIf(args ...string) (tasks map[common.PkgMgrTask]struct{}, err error) {
 	cmd := exec.Command(self.exe, append([]string{"-sqq"}, args...)...)

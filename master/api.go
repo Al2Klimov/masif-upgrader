@@ -107,7 +107,7 @@ func apiMkCrlValidator(crlPath string) func(rawCerts [][]byte, verifiedChains []
 
 				revokedCerts = map[string]struct{}{}
 				for _, revokedCert := range crl.TBSCertList.RevokedCertificates {
-					revokedCerts[revokedCert.SerialNumber.Text(62)] = struct{}{}
+					revokedCerts[revokedCert.SerialNumber.Text(16)] = struct{}{}
 				}
 			}
 
@@ -119,7 +119,7 @@ func apiMkCrlValidator(crlPath string) func(rawCerts [][]byte, verifiedChains []
 
 		for _, chains := range verifiedChains {
 			if chains[len(chains)-1].CheckCRLSignature(crl) == nil {
-				if _, isRevoked := revokedCerts[chains[len(chains)-2].SerialNumber.Text(62)]; !isRevoked {
+				if _, isRevoked := revokedCerts[chains[len(chains)-2].SerialNumber.Text(16)]; !isRevoked {
 					return nil
 				}
 			}

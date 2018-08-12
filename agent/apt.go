@@ -34,15 +34,23 @@ func newApt() (result *apt, err error) {
 	return
 }
 
-func (self *apt) whatIfUpgradeAll() (tasks map[common.PkgMgrTask]struct{}, err error) {
-	return self.whatIf("upgrade")
+func (self *apt) whatIfUpgradeAll(critOpRunner criticalOperationRunner) (tasks map[common.PkgMgrTask]struct{}, err error) {
+	critOpRunner.runCritical(func() {
+		tasks, err = self.whatIf("upgrade")
+	})
+
+	return
 }
 
-func (self *apt) whatIfUpgrade(packageName string) (tasks map[common.PkgMgrTask]struct{}, err error) {
-	return self.whatIf("upgrade", packageName)
+func (self *apt) whatIfUpgrade(critOpRunner criticalOperationRunner, packageName string) (tasks map[common.PkgMgrTask]struct{}, err error) {
+	critOpRunner.runCritical(func() {
+		tasks, err = self.whatIf("upgrade", packageName)
+	})
+
+	return
 }
 
-func (self *apt) upgrade(packageName string) error {
+func (self *apt) upgrade(critOpRunner criticalOperationRunner, packageName string) (err error) {
 	cmd := exec.Command(self.exe, "-yqq", "upgrade", packageName)
 
 	cmd.Env = []string{"LC_ALL=C", "DEBIAN_FRONTEND=noninteractive", "PATH=" + os.Getenv("PATH")}
@@ -51,7 +59,11 @@ func (self *apt) upgrade(packageName string) error {
 	cmd.Stdout = nil
 	cmd.Stderr = nil
 
-	return cmd.Run()
+	critOpRunner.runCritical(func() {
+		err = cmd.Run()
+	})
+
+	return
 }
 
 var aptLineRgx = regexp.MustCompile(`\A([^ ]+) ([^ ]+)(?: \[([^]]+)])?(?: \(([^)]+)\))?\z`)

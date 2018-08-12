@@ -7,6 +7,7 @@ import (
 	"github.com/Al2Klimov/masif-upgrader/common"
 	"gopkg.in/ini.v1"
 	"os"
+	"syscall"
 	"time"
 )
 
@@ -30,6 +31,11 @@ func main() {
 }
 
 func runAgent() error {
+	sigListener := &signalListener{}
+	sigListener.onSignals(func(sig os.Signal) {
+		os.Exit(0)
+	}, syscall.SIGTERM, syscall.SIGINT)
+
 	cfg, errLC := loadCfg()
 	if errLC != nil {
 		return errLC
@@ -59,7 +65,7 @@ func runAgent() error {
 
 	for {
 		if tasks == nil {
-			if tasks, errWIUA = ourPkgMgr.whatIfUpgradeAll(); errWIUA != nil {
+			if tasks, errWIUA = ourPkgMgr.whatIfUpgradeAll(sigListener); errWIUA != nil {
 				return errWIUA
 			}
 		}
@@ -88,7 +94,7 @@ func runAgent() error {
 
 			for {
 				if tasks == nil {
-					if tasks, errWIUA = ourPkgMgr.whatIfUpgradeAll(); errWIUA != nil {
+					if tasks, errWIUA = ourPkgMgr.whatIfUpgradeAll(sigListener); errWIUA != nil {
 						return errWIUA
 					}
 				}
@@ -101,7 +107,7 @@ func runAgent() error {
 					if _, isApproved := approvedTasks[task]; isApproved && task.Action == common.PkgMgrUpdate {
 						tasks = nil
 
-						tasksOnUpgrade, errWIU := ourPkgMgr.whatIfUpgrade(task.PackageName)
+						tasksOnUpgrade, errWIU := ourPkgMgr.whatIfUpgrade(sigListener, task.PackageName)
 						if errWIU != nil {
 							return errWIU
 						}
@@ -126,13 +132,13 @@ func runAgent() error {
 
 				tasks = nil
 
-				if errU := ourPkgMgr.upgrade(nextPackage); errU != nil {
+				if errU := ourPkgMgr.upgrade(sigListener, nextPackage); errU != nil {
 					return errU
 				}
 			}
 
 			if tasks == nil {
-				if tasks, errWIUA = ourPkgMgr.whatIfUpgradeAll(); errWIUA != nil {
+				if tasks, errWIUA = ourPkgMgr.whatIfUpgradeAll(sigListener); errWIUA != nil {
 					return errWIUA
 				}
 			}

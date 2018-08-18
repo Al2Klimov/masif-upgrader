@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"github.com/Al2Klimov/masif-upgrader/common"
 	"github.com/go-sql-driver/mysql"
+	"strings"
 	"time"
 )
 
@@ -149,9 +150,21 @@ func dbUpdatePendingTasks(agent string, tasks map[common.PkgMgrTask]struct{}) (a
 				pendingTasksForDb = map[common.PkgMgrTask]struct{}{}
 
 				for task := range pendingTasks {
-					if _, isInDb := pendingTasksInDb[task]; !isInDb {
-						pendingTasksForDb[task] = struct{}{}
+					pendingTasksForDb[task] = struct{}{}
+				}
+
+				pendingTasksOutDb := map[common.PkgMgrTask]struct{}{}
+
+				for task := range pendingTasksInDb {
+					if _, exists := pendingTasksForDb[task]; exists {
+						delete(pendingTasksForDb, task)
+					} else {
+						pendingTasksOutDb[task] = struct{}{}
 					}
+				}
+
+				if errDT := dbDeleteTasks(tx, dbAgentId, 0, pendingTasksOutDb); errDT != nil {
+					return errDT
 				}
 			} else {
 				pendingTasksForDb = pendingTasks
@@ -242,6 +255,9 @@ VALUES (?, ?, ?, ?, ?, 0)
 					}
 				}
 			}
+		} else if dbHasAgent {
+			_, errExec := tx.Exec(`DELETE FROM task WHERE agent=? AND approved=0`, dbAgentId)
+			return errExec
 		}
 
 		return nil
@@ -308,4 +324,181 @@ func dbGetTasks(tx *sql.Tx, agent interface{}, approved uint8) (tasks map[common
 	}
 
 	return
+}
+
+func dbDeleteTasks(tx *sql.Tx, agent interface{}, approved uint8, tasks map[common.PkgMgrTask]struct{}) error {
+	if len(tasks) > 0 {
+		filterBase := map[string]map[common.PkgMgrAction]map[string]map[string]struct{}{}
+
+		for task := range tasks {
+			if _, exists := filterBase[task.PackageName]; !exists {
+				filterBase[task.PackageName] = map[common.PkgMgrAction]map[string]map[string]struct{}{}
+			}
+
+			filterPackage := filterBase[task.PackageName]
+			if _, exists := filterPackage[task.Action]; !exists {
+				filterPackage[task.Action] = map[string]map[string]struct{}{}
+			}
+
+			filterAction := filterPackage[task.Action]
+			if _, exists := filterAction[task.FromVersion]; !exists {
+				filterAction[task.FromVersion] = map[string]struct{}{}
+			}
+
+			filterAction[task.FromVersion][task.ToVersion] = struct{}{}
+		}
+
+		type subFilter struct {
+			filter string
+			values []interface{}
+		}
+
+		subFilters0 := make(map[string]subFilter, len(filterBase))
+		valuesLen0 := 2
+
+		for packageName, actions := range filterBase {
+			subFilters1 := make(map[common.PkgMgrAction]subFilter, len(actions))
+			valuesLen1 := 0
+
+			for action, fromVersions := range actions {
+				subFilters2 := make(map[string]subFilter, len(fromVersions))
+				valuesLen2 := 0
+
+				for fromVersion, toVersions := range fromVersions {
+					_, toVersionHasNull := toVersions[""]
+					if toVersionHasNull {
+						delete(toVersions, "")
+					}
+
+					if toVersionHasNull && len(toVersions) < 1 {
+						subFilters2[fromVersion] = subFilter{
+							filter: "(t.to_version IS NULL)",
+							values: []interface{}{},
+						}
+
+						valuesLen2++
+					} else {
+						filters3 := make([]string, len(toVersions))
+						values3 := make([]interface{}, len(toVersions))
+						filterIdx3 := 0
+
+						for toVersion := range toVersions {
+							filters3[filterIdx3] = "?"
+							values3[filterIdx3] = toVersion
+							filterIdx3++
+						}
+
+						filter3 := "(t.to_version IN (" + strings.Join(filters3, ",") + "))"
+
+						if toVersionHasNull {
+							filter3 = "(CASE WHEN (t.to_version IS NULL) THEN 1 ELSE " + filter3 + " END)"
+						}
+
+						subFilters2[fromVersion] = subFilter{
+							filter: filter3,
+							values: values3,
+						}
+
+						valuesLen2 += 1 + len(values3)
+					}
+				}
+
+				fromVersionNullFilter, fromVersionHasNull := subFilters2[""]
+				if fromVersionHasNull {
+					delete(subFilters2, "")
+					valuesLen2--
+				}
+
+				valuesLen1 += 1 + valuesLen2
+
+				var filter2 string
+				var values2 []interface{}
+
+				if fromVersionHasNull && len(subFilters2) < 1 {
+					filter2 = "0"
+					values2 = fromVersionNullFilter.values
+				} else {
+					filters2 := make([]string, len(subFilters2))
+					filterIdx2 := 0
+					values2 = make([]interface{}, valuesLen2)
+					valueIdx2 := 0
+
+					if fromVersionHasNull {
+						copy(values2[valueIdx2:], fromVersionNullFilter.values)
+						valueIdx2 += len(fromVersionNullFilter.values)
+					}
+
+					for fromVersion, filter := range subFilters2 {
+						filters2[filterIdx2] = "WHEN ? THEN " + filter.filter
+						filterIdx2++
+
+						values2[valueIdx2] = fromVersion
+						valueIdx2++
+
+						copy(values2[valueIdx2:], filter.values)
+						valueIdx2 += len(filter.values)
+					}
+
+					filter2 = "(CASE t.from_version " + strings.Join(filters2, " ") + " ELSE 0 END)"
+				}
+
+				if fromVersionHasNull {
+					filter2 = "(CASE WHEN (t.from_version IS NULL) THEN " + fromVersionNullFilter.filter + " ELSE " + filter2 + " END)"
+				}
+
+				subFilters1[action] = subFilter{
+					filter: filter2,
+					values: values2,
+				}
+			}
+
+			valuesLen0 += 1 + valuesLen1
+
+			filters1 := make([]string, len(subFilters1))
+			filterIdx1 := 0
+			values1 := make([]interface{}, valuesLen1)
+			valueIdx1 := 0
+
+			for action, filter := range subFilters1 {
+				filters1[filterIdx1] = "WHEN ? THEN " + filter.filter
+				filterIdx1++
+				values1[valueIdx1] = pkgMgrAction2db[action]
+				valueIdx1++
+
+				copy(values1[valueIdx1:], filter.values)
+				valueIdx1 += len(filter.values)
+			}
+
+			subFilters0[packageName] = subFilter{
+				filter: "(CASE t.action " + strings.Join(filters1, " ") + " ELSE 0 END)",
+				values: values1,
+			}
+		}
+
+		filters0 := make([]string, len(subFilters0))
+		filterIdx0 := 0
+		values0 := make([]interface{}, valuesLen0)
+		valueIdx0 := 2
+
+		values0[0] = agent
+		values0[1] = approved
+
+		for packageName, filter := range subFilters0 {
+			filters0[filterIdx0] = "WHEN (SELECT p.id FROM package p WHERE p.name=?) THEN " + filter.filter
+			filterIdx0++
+			values0[valueIdx0] = packageName
+			valueIdx0++
+
+			copy(values0[valueIdx0:], filter.values)
+			valueIdx0 += len(filter.values)
+		}
+
+		_, errExec := tx.Exec(
+			`DELETE t FROM task t WHERE t.agent=? AND t.approved=? AND (CASE t.package `+strings.Join(filters0, " ")+` ELSE 0 END)`,
+			values0...,
+		)
+		return errExec
+	}
+
+	return nil
 }

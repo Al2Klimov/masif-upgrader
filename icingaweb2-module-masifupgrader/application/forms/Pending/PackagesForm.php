@@ -184,10 +184,15 @@ EOQ
             $view = $this->getView();
         }
 
+        $t1header1 = $this->translate('Package, agents awaiting approval');
+        $t1header2 = $this->translate('Action');
+        $t1header3 = $this->translate('Target version');
+        $t1checkbox1 = $this->translate('Select specific agents first');
+
         $result = $this->renderHeadless($view)
-            . "<table class='common-table'><thead><tr><th colspan='3'>{$view->escape($this->translate('Package, agents awaiting approval'))}</th>"
-            . "<th>{$view->escape($this->translate('Action'))}</th>"
-            . "<th colspan='3'>{$view->escape($this->translate('Target version'))}</th></tr></thead><tbody>";
+            . "<table class='common-table'><thead><tr><th colspan='3'>{$view->escape($t1header1)}</th>"
+            . "<th>{$view->escape($t1header2)}</th>"
+            . "<th colspan='3'>{$view->escape($t1header3)}</th></tr></thead><tbody>";
 
         $rows = [];
         $currentRow = 0;
@@ -249,10 +254,11 @@ EOQ
             $filterAgents = $this->getElement('filter_agents_first');
 
             $result .= "<tr><td rowspan='2' colspan='4'></td><td colspan='3'>{$filterAgents->render($view)}"
-                . "<label for='{$view->escape($filterAgents->getId())}'>&emsp;{$view->escape($this->translate('Select specific agents first'))}</label></td></tr>"
+                . "<label for='{$view->escape($filterAgents->getId())}'>&emsp;{$view->escape($t1checkbox1)}</label></td></tr>"
                 . "<tr><td colspan='3'>{$this->getElement('btn_submit')->render($view)}</td></tr></tbody></table>";
         } else {
-            $result .= "</tbody></table><table class='common-table'><thead><tr><th colspan='2'>{$view->escape($this->translate('Agent, pending packages'))}</th></tr></thead><tbody>";
+            $t2header1 = $this->translate('Agent, pending packages');
+            $result .= "</tbody></table><table class='common-table'><thead><tr><th colspan='2'>{$view->escape($t2header1)}</th></tr></thead><tbody>";
 
             foreach ($this->getAgents() as $agent => $packages) {
                 $approve = $this->getElement('agent_' . bin2hex($agent));
